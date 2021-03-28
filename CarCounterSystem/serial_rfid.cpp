@@ -174,7 +174,7 @@ int main() {
 	th2.join();
 	*/
 	//Ã÷È·½âÎö
-	string s = " ";
+	string s = " aaa";
 	auto j3 = json::parse(s);
 	cout << j3 << endl;
 	
