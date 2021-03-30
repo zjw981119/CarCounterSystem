@@ -26,9 +26,16 @@ void get_rfid_confg_from_request() {
 	string s = r.text;
 	cout << s << endl << endl;
 	auto config_json = json::parse(s);
-	cout << config_json << endl<<endl;
-	string config_str = config_json.dump();
-	cout << config_json.dump(4) << endl;
+	auto record = json::parse(string(config_json["data"]));
+	for (json::iterator it = record.begin(); it != record.end(); it++) {
+		std::cout << it.key() << endl << it.value() << "\n";
+	}
+	cout << record.size()<< endl;
+
+	cout << record << endl;
+	//cout << record["68359891"] << endl;
+
+
 	//string config_json = r.dump();
 	//cout << config_json;
 }
@@ -163,7 +170,7 @@ void sav_data(queue<list<string>>& picinfo, queue<Mat>& pic) {
 
 int main() {
 
-	//get_rfid_confg_from_request();
+	get_rfid_confg_from_request();
 	/*
 	queue<list<string>> picinfo;
 	queue<Mat> pic;
@@ -174,10 +181,11 @@ int main() {
 	th2.join();
 	*/
 	//Ã÷È·½âÎö
+	/*
 	string s = " aaa";
 	auto j3 = json::parse(s);
 	cout << j3 << endl;
-	
+	*/
 
 	return 0;
 }
