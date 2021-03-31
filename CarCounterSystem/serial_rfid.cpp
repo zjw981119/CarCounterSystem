@@ -2,8 +2,11 @@
 
 #include "json.hpp"
 #include <iostream>
+#include <fstream>
+#include <io.h>
 #include <queue>
 #include <list>
+#include <map>
 #include <cpr/cpr.h>
 #include <thread>
 #include <ctime>
@@ -13,27 +16,94 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <xlnt/xlnt.hpp>
+
+
 
 
 using namespace cv;
 using namespace std;
 using json = nlohmann::json;
 
-void get_rfid_confg_from_request() {
-	//测试http访问是否有效用的网站https://www.httpbin.org/get
-	cpr::Response r = cpr::Get(cpr::Url{ "http://110.17.165.146:7080/GuangNaReceived/counter/initConfig?address=GNXM" });
-
-	string s = r.text;
-	cout << s << endl << endl;
-	auto config_json = json::parse(s);
-	auto record = json::parse(string(config_json["data"]));
-	for (json::iterator it = record.begin(); it != record.end(); it++) {
-		std::cout << it.key() << endl << it.value() << "\n";
+void create_rfid_carNum_file(map<string,string> dic_rfid_carNum) {
+	string filename = "rfid_carNum.xlsx";
+	//查看文件是否存在
+	if (_access(filename.c_str(),00)!=-1)
+	{
+		//存在则删除
+		remove(filename.c_str());
+		cout << "存在该文件，已删除" << endl;
 	}
-	cout << record.size()<< endl;
+	else
+		cout << "文件不存在" << endl;
 
-	cout << record << endl;
-	//cout << record["68359891"] << endl;
+	try
+	{
+		xlnt::workbook wb;
+		xlnt::worksheet mainSheet = wb.active_sheet();
+		//mainSheet.title("abc"); 表单名
+		mainSheet.cell("A1").value("rfid");
+		mainSheet.cell("B1").value("carNum");
+		//将配置表信息写入xlsx表格中
+		int row_num = 2;
+		for (map<string, string>::iterator it = dic_rfid_carNum.begin(); it != dic_rfid_carNum.end(); it++)
+		{
+			mainSheet.cell(1,row_num).value(it->first);
+			mainSheet.cell(2,row_num).value(it->second);
+			row_num+=1;
+		}
+
+		//保存xlsx文件
+		wb.save("rfid_carNum.xlsx");
+	}
+	catch (std::exception e)
+	{
+		std::string s = e.what();
+		cout << s << endl;
+	}
+
+
+}
+
+void get_rfid_confg_from_request() {
+	int request_times = 0;
+	map<string, string> dic_rfid_carNum;
+	while (request_times < 5)
+	{
+		//测试http访问是否有效用的网站https://www.httpbin.org/get
+		cpr::Response r = cpr::Get(cpr::Url{ "http://110.17.165.146:7080/GuangNaReceived/counter/initConfig?address=GNXM" });
+		//提取data数据中的字符串，转换为json格式
+		string s = r.text;
+		auto config_json = json::parse(s);
+		if (config_json["result"]["success"] == true)
+		{
+			auto record = json::parse(string(config_json["data"]));
+			//cout << record << endl;
+			//rfid卡号和车号对应关系转为字典
+			for (json::iterator it = record.begin(); it != record.end(); it++) {
+				dic_rfid_carNum.insert(pair<string, string>(it.key(), it.value()));
+			}
+			break;
+			//cout << dic_rfid_carNum["68359937"] << endl;
+		}
+		else
+		{
+			request_times += 1;
+			continue;
+		}
+	}
+
+	if (request_times > 5)
+	{
+		cout << "网络请求失败" << endl;
+	}
+	//网络请求获取配置信息成功，将配置信息保存在本机xlsx文件中
+	else
+	{
+		create_rfid_carNum_file(dic_rfid_carNum);
+		cout << "本地rfid车号保存成功" << endl;
+	}
+	
 
 
 	//string config_json = r.dump();
@@ -171,6 +241,7 @@ void sav_data(queue<list<string>>& picinfo, queue<Mat>& pic) {
 int main() {
 
 	get_rfid_confg_from_request();
+	
 	/*
 	queue<list<string>> picinfo;
 	queue<Mat> pic;
