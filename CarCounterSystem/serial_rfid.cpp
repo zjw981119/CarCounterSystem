@@ -1,6 +1,8 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "json.hpp"
+#include <WzSerialPort.h>
+
 #include <iostream>
 #include <fstream>
 #include <io.h>
@@ -16,8 +18,9 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include <xlnt/xlnt.hpp>
 
+#include <xlnt/xlnt.hpp>
+//#include <SerialPort.h>
 
 
 
@@ -136,6 +139,53 @@ string GetSystemTime()
 	return time;
 }
 
+void rec_serialdata() {
+	// 打开串口,成功返回true，失败返回false
+	// portname(串口名): 在Windows下是"COM1""COM2"等，在Linux下是"/dev/ttyS1"等
+	// baudrate(波特率): 9600、19200、38400、43000、56000、57600、115200 
+	// parity(校验位): 0为无校验，1为奇校验，2为偶校验，3为标记校验（仅适用于windows)
+	// databit(数据位): 4-8(windows),5-8(linux)，通常为8位
+	// stopbit(停止位): 1为1位停止位，2为2位停止位,3为1.5位停止位
+	// synchronizeflag(同步、异步,仅适用与windows): 0为异步，1为同步
+	//bool open(const char* portname, int baudrate, char parity, char databit, char stopbit, char synchronizeflag=1);
+	WzSerialPort serialport;
+	
+	if (serialport.open("COM4", 57600, 0, 8, 1))
+	{
+		cout << "串口已打开" << endl;
+		//cout << "test" << endl;
+		unsigned char buf[1024];
+		try {
+			while (true)
+			{
+				memset(buf, 0, 1024);
+				//Sleep(1 * 1000);
+
+				serialport.receive(buf, 1024);
+				cout << "test" << endl;
+				int tmp = serialport.receive(buf, 1024);
+				cout << "数据长度为: " << tmp << endl;
+				//逐个字符打印
+				for (int i = 0; i < tmp; i++)
+				{
+					cout << buf[i];
+				}
+				cout << endl;
+			}
+		}
+		
+		catch (std::exception e)
+		{
+			std::string s = e.what();
+			cout << s << endl;
+		}
+	}
+	else {
+		cout << "串口打开失败" << endl;
+	}
+	
+	
+}
 void rev_serial(queue<list<string>> &picinfo,queue<Mat> &pic) {
 	VideoCapture cap;
 	ini_cap(cap);
@@ -238,10 +288,37 @@ void sav_data(queue<list<string>>& picinfo, queue<Mat>& pic) {
 	}
 }
 
+void uplode_data() {
+	intptr_t handle;
+	_finddatai64_t fileInfo;
+	vector<string> files;
+	string path = "C:\\Users\\Hasee\\Desktop\\testPic\\*.jpg";
+	handle = _findfirst64(path.c_str(), &fileInfo);
+	if (handle==-1)
+	{
+		cout << "文件夹中没有读取到文件" << endl;
+	}
+	do
+	{
+		cout << "文件大小为 "<< fileInfo.size<<"文件名为 "<<fileInfo.name << endl;
+		files.push_back(fileInfo.name);
+	} while (_findnext64(handle, &fileInfo) != -1);
+		cout << "查找到" << files.size() << "个文件" << endl;
+}
+
 int main() {
 
-	get_rfid_confg_from_request();
+	//get_rfid_confg_from_request();
+	//rec_serialdata();
+	uplode_data();
+	//string s ="b'\x11\x00\xee\x00\xe0 \x820b6\xaa \x04\x13\x13\xfa\xc4\\'";
+	//string s = "c45c1100e";
+	//cout << "字符串长度为： " << s.length() << endl;
+	//s.erase(s.length() - 1, 1);
+	//s.erase(0, 2);
 	
+	//cout << s << endl;
+
 	/*
 	queue<list<string>> picinfo;
 	queue<Mat> pic;

@@ -18,5 +18,13 @@
     <ClCompile Include="serial_rfid.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="D:\WzSerialPort-master\src\windows\WzSerialPort.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="D:\vcpkg\installed\x64-windows\include\WzSerialPort.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
