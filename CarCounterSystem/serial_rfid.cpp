@@ -8,6 +8,7 @@
 #include <io.h>
 #include <queue>
 #include <list>
+#include <string.h>
 #include <map>
 #include <cpr/cpr.h>
 #include <thread>
@@ -186,7 +187,9 @@ void rec_serialdata() {
 	
 	
 }
-void rev_serial(queue<list<string>> &picinfo,queue<Mat> &pic) {
+
+//接收串口数据并用摄像头拍摄照片
+void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 	VideoCapture cap;
 	ini_cap(cap);
 	
@@ -199,7 +202,7 @@ void rev_serial(queue<list<string>> &picinfo,queue<Mat> &pic) {
 	string flag;
 	string cap_time;
 	string now_time="还没写";
-	list<string> record;
+	vector<string> record;
 	Mat frame;
 	Mat blankframe(480, 640, CV_8UC1, Scalar(255));
 	
@@ -250,8 +253,9 @@ void rev_serial(queue<list<string>> &picinfo,queue<Mat> &pic) {
 	
 }
 
-void sav_data(queue<list<string>>& picinfo, queue<Mat>& pic) {
-	list<string> record;
+//图片保存在本地
+void sav_data(queue<vector<string>>& picinfo, queue<Mat>& pic) {
+	vector<string> record;
     while (true)
 	{
 		string pic_name = "GNXM@001#";
@@ -262,15 +266,11 @@ void sav_data(queue<list<string>>& picinfo, queue<Mat>& pic) {
 			cout << "队列已空" << endl;
 			continue;
 		}
+		//取出队列中照片信息
 		record = picinfo.front();
 		picinfo.pop();
 		//照片名称，不可用冒号
-		while (!record.empty())
-		{
-			string tmp = record.front();
-			pic_name = pic_name + tmp + "#";
-			record.pop_front();
-		}
+		pic_name = pic_name + record[0] + "#" + record[2] + "#" + record[3];
 		cout << pic_name << endl;
 		
 		Mat frame = pic.front();
@@ -288,29 +288,58 @@ void sav_data(queue<list<string>>& picinfo, queue<Mat>& pic) {
 	}
 }
 
+vector<string> splitstr(string& str, const char *delim)
+{
+	//string转为char
+	char* strc = new char[strlen(str.c_str()) + 1];
+	strcpy(strc, str.c_str());
+
+	vector<string> resultVec;
+	//以delim字符分割字符串，并分别装入vector<string>容器中
+	char* tmpStr = strtok(strc, delim);
+	while (tmpStr != NULL)
+	{
+		resultVec.push_back(string(tmpStr));
+		tmpStr = strtok(NULL, delim);
+	}
+	
+	//delete[] strc;
+	return resultVec;
+}
+
 void uplode_data() {
 	intptr_t handle;
 	_finddatai64_t fileInfo;
 	vector<string> files;
+	vector<string> rfid_record;
 	string path = "C:\\Users\\Hasee\\Desktop\\testPic\\*.jpg";
+	const char delim[2] = "#";
 	handle = _findfirst64(path.c_str(), &fileInfo);
 	if (handle==-1)
 	{
 		cout << "文件夹中没有读取到文件" << endl;
 	}
+	//遍历指定路径下文件夹中文件名称、大小、创建时间等
 	do
 	{
 		cout << "文件大小为 "<< fileInfo.size<<"文件名为 "<<fileInfo.name << endl;
-		files.push_back(fileInfo.name);
+		string picname = fileInfo.name;
+		files.push_back(picname);
+		//将图片名称以"#"分割。并存入容器中
+		//文件的名字格式：GNXM@001#68359998#2021-01-17 18+10+50#cap.jpg
+		rfid_record=splitstr(picname, delim);
+		//解析后的数据为"GNXM@001", "34087686", "2020-07-14 16:45:54" , "cap.jpg"
+		
+
+
 	} while (_findnext64(handle, &fileInfo) != -1);
 		cout << "查找到" << files.size() << "个文件" << endl;
 }
 
 int main() {
 
-	//get_rfid_confg_from_request();
-	//rec_serialdata();
-	uplode_data();
+
+	
 	//string s ="b'\x11\x00\xee\x00\xe0 \x820b6\xaa \x04\x13\x13\xfa\xc4\\'";
 	//string s = "c45c1100e";
 	//cout << "字符串长度为： " << s.length() << endl;
@@ -319,21 +348,19 @@ int main() {
 	
 	//cout << s << endl;
 
-	/*
-	queue<list<string>> picinfo;
+
+	//get_rfid_confg_from_request();
+	queue<vector<string>> picinfo;
 	queue<Mat> pic;
 	//传引用，需要用ref()进行包装
 	thread th1 = thread(rev_serial,std::ref(picinfo),ref(pic));
 	thread th2 = thread(sav_data, std::ref(picinfo), ref(pic));
+	//uplode_data();
 	th1.join();
 	th2.join();
-	*/
-	//明确解析
-	/*
-	string s = " aaa";
-	auto j3 = json::parse(s);
-	cout << j3 << endl;
-	*/
+	
+
+
 
 	return 0;
 }
