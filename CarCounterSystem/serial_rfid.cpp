@@ -225,6 +225,7 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 	//抓图失败，生成空白图片
 	if (times == 5) 
 	{
+		cap_time = GetSystemTime();
 		flag = "blank";
 		frame = blankframe;
 	}
@@ -288,6 +289,7 @@ void sav_data(queue<vector<string>>& picinfo, queue<Mat>& pic) {
 	}
 }
 
+//分割字符串
 vector<string> splitstr(string& str, const char *delim)
 {
 	//string转为char
@@ -307,6 +309,23 @@ vector<string> splitstr(string& str, const char *delim)
 	return resultVec;
 }
 
+//字符串替换所有指定字符
+string replace_all(string str, string preStr, string nextStr)
+{
+	string::size_type startpos = 0;
+	while (startpos != string::npos) //如果没找到，返回一个特别的标志c++中用npos表示
+	{
+		startpos = str.find(preStr);
+		//cout << startpos << endl;
+		//替换
+		if (startpos != string::npos)
+		{
+			str.replace(startpos, 1, nextStr);
+		}
+	}
+	return str;
+}
+
 void uplode_data() {
 	intptr_t handle;
 	_finddatai64_t fileInfo;
@@ -320,26 +339,36 @@ void uplode_data() {
 		cout << "文件夹中没有读取到文件" << endl;
 	}
 	//遍历指定路径下文件夹中文件名称、大小、创建时间等
-	do
+	try
 	{
-		cout << "文件大小为 "<< fileInfo.size<<"文件名为 "<<fileInfo.name << endl;
-		string picname = fileInfo.name;
-		files.push_back(picname);
-		//将图片名称以"#"分割。并存入容器中
-		//文件的名字格式：GNXM@001#68359998#2021-01-17 18+10+50#cap.jpg
-		rfid_record=splitstr(picname, delim);
-		//解析后的数据为"GNXM@001", "34087686", "2020-07-14 16:45:54" , "cap.jpg"
-		
+		do
+		{
+			cout << "文件大小为 " << fileInfo.size << "文件名为 " << fileInfo.name << endl;
+			string picname = fileInfo.name;
+			files.push_back(picname);
+			//将图片名称以"#"分割。并存入容器中
+			//文件的名字格式：GNXM@001#68359998#2021-01-17 18+10+50#cap.jpg
+			//解析后的数据为"GNXM@001", "34087686", "2020-07-14 16+45+54" , "cap.jpg"
+			rfid_record = splitstr(picname, delim);
+			rfid_record[2] = replace_all(rfid_record[2], "+", ":"); //将时间中的"+"替换为":"
+			//cout << rfid_record[2] << endl;
 
 
-	} while (_findnext64(handle, &fileInfo) != -1);
+		} while (_findnext64(handle, &fileInfo) != -1);
 		cout << "查找到" << files.size() << "个文件" << endl;
+	}
+
+
+	catch (std::exception e)
+	{
+		std::string s = e.what();
+		cout << s << endl;
+	}
+	
 }
 
 int main() {
 
-
-	
 	//string s ="b'\x11\x00\xee\x00\xe0 \x820b6\xaa \x04\x13\x13\xfa\xc4\\'";
 	//string s = "c45c1100e";
 	//cout << "字符串长度为： " << s.length() << endl;
@@ -350,14 +379,17 @@ int main() {
 
 
 	//get_rfid_confg_from_request();
+	
 	queue<vector<string>> picinfo;
 	queue<Mat> pic;
 	//传引用，需要用ref()进行包装
 	thread th1 = thread(rev_serial,std::ref(picinfo),ref(pic));
 	thread th2 = thread(sav_data, std::ref(picinfo), ref(pic));
-	//uplode_data();
+	
 	th1.join();
 	th2.join();
+	
+	//uplode_data();
 	
 
 
