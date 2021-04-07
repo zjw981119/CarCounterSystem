@@ -1,6 +1,10 @@
 #define _CRT_SECURE_NO_WARNINGS
 
+//#include <stdio.h>
+//#include <stdlib.h>
+
 #include "json.hpp"
+#include <base64.h>
 #include <WzSerialPort.h>
 
 #include <iostream>
@@ -309,7 +313,7 @@ vector<string> splitstr(string& str, const char *delim)
 	return resultVec;
 }
 
-//字符串替换所有指定字符
+//字符串替换全部某一指定字符
 string replace_all(string str, string preStr, string nextStr)
 {
 	string::size_type startpos = 0;
@@ -324,6 +328,63 @@ string replace_all(string str, string preStr, string nextStr)
 		}
 	}
 	return str;
+}
+
+int pic_convertto_bin(const char* Filename) {
+	//以二进制方式打开文件，将文件数据输入到内存
+	ifstream file(Filename, ifstream::in | ifstream::binary);
+	file.seekg(0, file.end); //偏移量0，从文件末尾开始偏移
+	int file_length = file.tellg();
+	cout << file_length << endl;
+
+	file.seekg(0, file.beg);
+	char* buffer = new char[file_length];
+	file.read(buffer, file_length);
+	
+	string base64_data = base64_encode(reinterpret_cast<const unsigned char*>(buffer), file_length);
+	cout << "base64编码长度为； "<<base64_data.length()<<endl<< base64_data << endl;
+	return 0;
+	
+	/*
+	FILE* fp;
+	fopen_s(&fp, Filename, "rb"); //以二进制方式打开图像
+	if (fp ==NULL)
+	{
+		perror("File opening failed");
+		return EXIT_FAILURE;
+	}
+
+	fseek(fp, 0, SEEK_END); //设置指向文件的指针在文件末尾SEEK_END 添加偏移量0
+	long int size = ftell(fp);//文件大小
+	rewind(fp);//重置文件指针指向文件开头
+	cout << "图片大小为： "<< size << endl;
+
+	//根据图像数据长度分配内存buffer
+	 char* ImgBuffer = (char*)malloc(size * sizeof(char));
+	//将图像数据读入buffer
+	fread(ImgBuffer, size, 1, fp);
+	fclose(fp);
+	if ((fp = fopen("C:\\Users\\Hasee\\Desktop\\a.txt", "wb")) == NULL)
+	{
+		perror("txtxFile opening failed");
+		exit(0);
+	}
+
+	fwrite(ImgBuffer, size, 1, fp);
+	printf("ok");
+
+	fclose(fp);
+	free(ImgBuffer);
+	
+	string base64_data = base64_encode(string(ImgBuffer), false);
+	cout << "图像数据为： " << ImgBuffer << endl;
+	cout << "图像base64编码为： " << base64_data << endl;
+	*/
+	
+	
+	
+	
+	
 }
 
 void uplode_data() {
@@ -348,10 +409,20 @@ void uplode_data() {
 			files.push_back(picname);
 			//将图片名称以"#"分割。并存入容器中
 			//文件的名字格式：GNXM@001#68359998#2021-01-17 18+10+50#cap.jpg
-			//解析后的数据为"GNXM@001", "34087686", "2020-07-14 16+45+54" , "cap.jpg"
+			//解析后的数据为"GNXM@001", "68359998", "2021-01-17 18+10+50" , "cap.jpg"
 			rfid_record = splitstr(picname, delim);
 			rfid_record[2] = replace_all(rfid_record[2], "+", ":"); //将时间中的"+"替换为":"
+			rfid_record[3] = rfid_record[3].replace(rfid_record[3].find("."), 4, "");//去掉.jpg，只保留照片类型（cap/blank）
 			//cout << rfid_record[2] << endl;
+			//cout << rfid_record[3] << rfid_record[3].size()<< endl;
+			if (fileInfo.size < 35000 && rfid_record[3] == "cap")//是抓图且文件小于一定大小，说明不完整,另一个线程正在保存文件
+			{
+				Sleep(5 * 1000);
+			}
+			else  //不是抓图或者抓图大于一定大小，说明抓图保存完成
+			{
+
+			}
 
 
 		} while (_findnext64(handle, &fileInfo) != -1);
@@ -380,6 +451,7 @@ int main() {
 
 	//get_rfid_confg_from_request();
 	
+	/*
 	queue<vector<string>> picinfo;
 	queue<Mat> pic;
 	//传引用，需要用ref()进行包装
@@ -388,11 +460,12 @@ int main() {
 	
 	th1.join();
 	th2.join();
+	*/
 	
 	//uplode_data();
-	
 
-
+	const char* filename = "C:\\Users\\Hasee\\Desktop\\testPic\\GNXM@001#68359998#2021-01-17 18+26+00#cap.jpg";
+	pic_convertto_bin(filename);
 
 	return 0;
 }

@@ -139,11 +139,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="D:\WzSerialPort-master\src\windows\WzSerialPort.cpp" />
+    <ClCompile Include="D:\c++pkg\cpp-base64-2.rc.08\base64.cpp" />
+    <ClCompile Include="D:\c++pkg\WzSerialPort-master\src\windows\WzSerialPort.cpp" />
     <ClCompile Include="serial_rfid.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="D:\vcpkg\installed\x64-windows\include\WzSerialPort.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
