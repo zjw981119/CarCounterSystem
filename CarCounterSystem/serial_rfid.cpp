@@ -33,6 +33,7 @@ using namespace cv;
 using namespace std;
 using json = nlohmann::json;
 
+//根据获取的rfid车号配置数据，更新本地rfid_carNum配置文件
 void create_rfid_carNum_file(map<string,string> dic_rfid_carNum) {
 	string filename = "rfid_carNum.xlsx";
 	//查看文件是否存在
@@ -73,6 +74,7 @@ void create_rfid_carNum_file(map<string,string> dic_rfid_carNum) {
 
 }
 
+//从server请求中获取rfid和车号对应表
 void get_rfid_confg_from_request() {
 	int request_times = 0;
 	map<string, string> dic_rfid_carNum;
@@ -118,6 +120,7 @@ void get_rfid_confg_from_request() {
 	//cout << config_json;
 }
 
+//初始化摄像头
 void ini_cap(VideoCapture &cap) {
 	// url = 'rtsp://admin:gn123456@222.74.94.190:1554/Streaming/Channels/0301?transportmode=multicas'
     //url = 'rtsp://admin:gn123456@192.168.12.143:554/h264/ch1/main/av_stream'
@@ -330,7 +333,7 @@ string replace_all(string str, string preStr, string nextStr)
 	return str;
 }
 
-int pic_convertto_bin(const char* Filename) {
+string pic_convertto_bin(const char* Filename) {
 	//以二进制方式打开文件，将文件数据输入到内存
 	ifstream file(Filename, ifstream::in | ifstream::binary);
 	file.seekg(0, file.end); //偏移量0，从文件末尾开始偏移
@@ -342,8 +345,12 @@ int pic_convertto_bin(const char* Filename) {
 	file.read(buffer, file_length);
 	
 	string base64_data = base64_encode(reinterpret_cast<const unsigned char*>(buffer), file_length);
-	cout << "base64编码长度为； "<<base64_data.length()<<endl<< base64_data << endl;
-	return 0;
+	base64_data = "data:image/jpg;base64," + base64_data;
+	//cout << "base64编码长度为； "<<base64_data.length()<<endl<< base64_data << endl;
+	//删除buffer,清空指针
+	delete[]buffer;
+	file.close();
+	return base64_data;
 	
 	/*
 	FILE* fp;
@@ -387,14 +394,16 @@ int pic_convertto_bin(const char* Filename) {
 	
 }
 
+//本机图片上传服务器
 void uplode_data() {
 	intptr_t handle;
 	_finddatai64_t fileInfo;
 	vector<string> files;
 	vector<string> rfid_record;
-	string path = "C:\\Users\\Hasee\\Desktop\\testPic\\*.jpg";
+	string search_path = "C:\\Users\\Hasee\\Desktop\\testPic\\*.jpg";
+	string path = "C:\\Users\\Hasee\\Desktop\\testPic\\";
 	const char delim[2] = "#";
-	handle = _findfirst64(path.c_str(), &fileInfo);
+	handle = _findfirst64(search_path.c_str(), &fileInfo);
 	if (handle==-1)
 	{
 		cout << "文件夹中没有读取到文件" << endl;
@@ -421,7 +430,45 @@ void uplode_data() {
 			}
 			else  //不是抓图或者抓图大于一定大小，说明抓图保存完成
 			{
+				//图片转base64编码
+				string base64_data = pic_convertto_bin((path + fileInfo.name).c_str());
+				//cout << base64_data << endl;
 
+
+				json upload_data;
+				upload_data["address"] = rfid_record[0];
+				upload_data["cardNo"] = rfid_record[1];
+				upload_data["picture"] = base64_data;
+				upload_data["time"] = rfid_record[2];
+				//cout << upload_data << endl;
+				
+				string s = upload_data.dump();
+				cout << s << endl;
+				
+				string url_upload = "http://110.17.165.146:7080/GuangNaReceived/counter/add";
+				cpr::Payload payload = cpr::Payload{ {"address",rfid_record[0]},{"cardNo",rfid_record[1]},
+					{"picture",base64_data},{"time",rfid_record[2]} };
+				cpr::Body body = cpr::Body( s );
+				cpr::Response r = cpr::Post(cpr::Url(url_upload),
+					cpr::Header{ {"Content-Type","application/json"} },body );
+
+					//cpr::Payload{ {"address",""} });
+					//cpr::Body{"test"});
+					/*
+					cpr::Payload{ {"address",rfid_record[0]},
+					{"cardNo",rfid_record[1]},
+					{"picture",base64_data},
+					{"time",rfid_record[2]}});
+					*/
+					
+
+				cout << r.status_code << endl;
+				cout << r.header["content-type"] << endl;
+				
+				auto post_response = json::parse(r.text);
+				cout << post_response << endl;
+				cout << post_response["result"]["success"] << endl;
+				break;
 			}
 
 
@@ -437,6 +484,17 @@ void uplode_data() {
 	}
 	
 }
+
+void test_json()
+{
+	json upload_data;
+	upload_data["address"] = "GNXM@001";
+	upload_data["cardNo"] = "68359998";
+	upload_data["picture"] = "data:image/jpg;base64,";
+	upload_data["time"] = "2020-07-14 16:45:54";
+	cout << upload_data << endl;
+}
+
 
 int main() {
 
@@ -462,10 +520,14 @@ int main() {
 	th2.join();
 	*/
 	
-	//uplode_data();
+	uplode_data();
 
-	const char* filename = "C:\\Users\\Hasee\\Desktop\\testPic\\GNXM@001#68359998#2021-01-17 18+26+00#cap.jpg";
-	pic_convertto_bin(filename);
+	//const char* filename = "C:\\Users\\Hasee\\Desktop\\testPic\\GNXM@001#68359998#2021-01-17 18+26+00#cap.jpg";
+	//pic_convertto_bin(filename);
 
+	//test_json();
+
+
+	
 	return 0;
 }
