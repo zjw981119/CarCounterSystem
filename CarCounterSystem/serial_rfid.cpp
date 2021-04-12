@@ -74,6 +74,59 @@ void create_rfid_carNum_file(map<string,string> dic_rfid_carNum) {
 
 }
 
+//从本地文件中读取rfid车号配置表，返回map
+map<string,string> read_rfid_carNum_file()
+{
+	string filename = "rfid_carNum.xlsx";
+	//查看文件是否存在
+	if (_access(filename.c_str(), 00) == -1)
+	{
+		//文件不存在
+		cout << "文件不存在" << endl;
+		return;
+	}
+	//查看文件是否可读
+	while (_access(filename.c_str(), 2) != 0)
+	{
+		cout << "文件不可读，等待" << endl;
+		Sleep(2 * 1000);
+	}
+
+	xlnt::workbook wb;
+	wb.load(filename);
+	auto ws = wb.active_sheet(); //获取当前活跃的sheet
+	int max_row = ws.highest_row();
+	map<string, string> dic;
+	int row_num = 0;
+	int column_num = 1;
+	//遍历每一行
+	for (auto row : ws.rows(false))
+	{
+		row_num++;
+		string rfid;
+		string carNum;
+		//将rfid和车号值存入dic中
+		for (auto cell : row)
+		{
+			//从表格第二行开始读取数据
+			if (row_num == 1) continue;
+			if (column_num == 1)
+			{
+				rfid = cell.to_string();
+				column_num++;
+			}
+			else
+			{
+				carNum = cell.to_string();
+				column_num--;
+			}
+		}
+		if(row_num!=1) dic[rfid] = carNum; //第一行数据不存
+		
+	}
+	return dic;
+}
+
 //从server请求中获取rfid和车号对应表
 void get_rfid_confg_from_request() {
 	int request_times = 0;
@@ -147,6 +200,17 @@ string GetSystemTime()
 	return time;
 }
 
+//添加被hex自动删去的0
+string modHexdata(string tmp) {
+	if (tmp.length() == 1)
+	{
+		tmp = "0" + tmp;
+		return tmp;
+	}
+	else
+		return tmp;
+}
+
 void rec_serialdata() {
 	// 打开串口,成功返回true，失败返回false
 	// portname(串口名): 在Windows下是"COM1""COM2"等，在Linux下是"/dev/ttyS1"等
@@ -157,28 +221,42 @@ void rec_serialdata() {
 	// synchronizeflag(同步、异步,仅适用与windows): 0为异步，1为同步
 	//bool open(const char* portname, int baudrate, char parity, char databit, char stopbit, char synchronizeflag=1);
 	WzSerialPort serialport;
-	
+
 	if (serialport.open("COM4", 57600, 0, 8, 1))
 	{
 		cout << "串口已打开" << endl;
 		//cout << "test" << endl;
 		unsigned char buf[1024];
+		string hex_data = "";
+		string tmp;
+		stringstream ss;
 		try {
 			while (true)
 			{
 				memset(buf, 0, 1024);
-				//Sleep(1 * 1000);
+				hex_data.clear();
+				tmp.clear();
 
-				serialport.receive(buf, 1024);
-				cout << "test" << endl;
-				int tmp = serialport.receive(buf, 1024);
-				cout << "数据长度为: " << tmp << endl;
-				//逐个字符打印
-				for (int i = 0; i < tmp; i++)
+				Sleep(1 * 1000);
+
+				//serialport.receive(buf, 1024);
+				//cout << "test" << endl;
+				int len = serialport.receive(buf, 1024);
+				cout << "WZSerialPort接收到的数据长度为: " << tmp << endl;
+				//逐个字符转16进制写入字符串hex_data中
+				for (int i = 0; i < len; i++)
 				{
-					cout << buf[i];
+					ss.clear();
+					ss << hex << (int)buf[i];
+					ss >> tmp;
+					//转成16进制的数据可能因为高位为0而被省略，用modHexdata()来添加被省略的0；
+					hex_data = hex_data + modHexdata(tmp);
 				}
-				cout << endl;
+				
+				
+				cout << "解析后的16进制字符串长度为：" << hex_data.length() << endl;
+				cout << "解析后的16进制数据为：" << hex_data << endl;
+				
 			}
 		}
 		
@@ -197,6 +275,8 @@ void rec_serialdata() {
 
 //接收串口数据并用摄像头拍摄照片
 void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
+	
+	
 	VideoCapture cap;
 	ini_cap(cap);
 	
@@ -518,14 +598,25 @@ int main() {
 	
 	th1.join();
 	th2.join();
+
+
+	string hex_data = "1100ee00e02082306236aa20041313fcf239";
+	string head_rfid = hex_data.substr(0, 6);
+	if (head_rfid == "1100ee")
+	{
+		//将16进制数据转为10进制rfid卡号
+		int rfidNum = stoi(hex_data.substr(24, 8),nullptr,16);
+		cout << rfidNum << endl;
+	}
+
 	*/
 	
-	uplode_data();
+	//uplode_data();
+	//rec_serialdata();
 
-	//const char* filename = "C:\\Users\\Hasee\\Desktop\\testPic\\GNXM@001#68359998#2021-01-17 18+26+00#cap.jpg";
-	//pic_convertto_bin(filename);
+	
 
-	//test_json();
+	read_rfid_carNum_file();
 
 
 	
