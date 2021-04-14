@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 
-//#include <stdio.h>
+#include <stdio.h>
 //#include <stdlib.h>
 
 #include "json.hpp"
@@ -83,7 +83,6 @@ map<string,string> read_rfid_carNum_file()
 	{
 		//文件不存在
 		cout << "文件不存在" << endl;
-		return;
 	}
 	//查看文件是否可读
 	while (_access(filename.c_str(), 2) != 0)
@@ -137,6 +136,7 @@ void get_rfid_confg_from_request() {
 		cpr::Response r = cpr::Get(cpr::Url{ "http://110.17.165.146:7080/GuangNaReceived/counter/initConfig?address=GNXM" });
 		//提取data数据中的字符串，转换为json格式
 		string s = r.text;
+		cout << "接收到的json数据为：" << s << endl;
 		auto config_json = json::parse(s);
 		if (config_json["result"]["success"] == true)
 		{
@@ -166,11 +166,53 @@ void get_rfid_confg_from_request() {
 		create_rfid_carNum_file(dic_rfid_carNum);
 		cout << "本地rfid车号保存成功" << endl;
 	}
+	// 创建临时文件，表示更新了数据
+	FILE* fp;
+	fp = fopen("updated", "a");//为输出打开文件，输出操作总是再文件末尾追加数据，如果文件不存在，创建新文件。
+	fclose(fp);
 	
 
 
 	//string config_json = r.dump();
 	//cout << config_json;
+}
+
+//进行数据清除标记
+void clear_times() {
+    //创建临时文件，用于标识是否需要清空车辆运输趟数记录
+	FILE* fp;
+	fp = fopen("clear", "a");//a 若文件不存在则创建新文件
+	fclose(fp);
+	cout << "已创建clear文件" << endl;
+}
+
+//每天自动更新车辆信息、清空运输数据
+void update_rfid_confg() {
+	while (true)
+	{
+		Sleep(3 * 1000);
+		time_t now = time(0);
+		//cout << "1970 到目前经过秒数:" << now << endl;
+		//转为tm结构体
+		tm* ltm = localtime(&now);
+		//nowtime为当前小时分钟
+		string nowtime = to_string(ltm->tm_hour) + ":" + to_string(ltm->tm_min);
+		cout << nowtime << endl;
+		if (nowtime == "05:50") get_rfid_confg_from_request();
+		else if (nowtime == "06:00") clear_times();//白班运输次数清零
+		else if (nowtime == "21:31") clear_times();//夜班运输次数清零
+	}
+
+	/*
+	输出 tm 结构的各个组成部分
+	cout << "年: " << 1900 + ltm->tm_year << endl;
+	cout << "月: " << 1 + ltm->tm_mon << endl;
+	cout << "日: " << ltm->tm_mday << endl;
+	cout << "时间: " << ltm->tm_hour << ":";
+	cout << ltm->tm_min << ":";
+	cout << ltm->tm_sec << endl;
+	*/ 
+
 }
 
 //初始化摄像头
@@ -211,6 +253,7 @@ string modHexdata(string tmp) {
 		return tmp;
 }
 
+//接收串口数据
 void rec_serialdata() {
 	// 打开串口,成功返回true，失败返回false
 	// portname(串口名): 在Windows下是"COM1""COM2"等，在Linux下是"/dev/ttyS1"等
@@ -242,7 +285,7 @@ void rec_serialdata() {
 				//serialport.receive(buf, 1024);
 				//cout << "test" << endl;
 				int len = serialport.receive(buf, 1024);
-				cout << "WZSerialPort接收到的数据长度为: " << tmp << endl;
+				cout << "WZSerialPort接收到的数据长度为: " << len << endl;
 				//逐个字符转16进制写入字符串hex_data中
 				for (int i = 0; i < len; i++)
 				{
@@ -256,7 +299,14 @@ void rec_serialdata() {
 				
 				cout << "解析后的16进制字符串长度为：" << hex_data.length() << endl;
 				cout << "解析后的16进制数据为：" << hex_data << endl;
-				
+
+				string head_rfid = hex_data.substr(0, 6);
+				if (head_rfid == "1100ee")
+				{
+					//将16进制数据转为10进制rfid卡号
+					int rfidNum = stoi(hex_data.substr(24, 8), nullptr, 16);
+					cout <<"解析出的rfid卡号为："<< rfidNum << endl;
+				}
 			}
 		}
 		
@@ -276,10 +326,63 @@ void rec_serialdata() {
 //接收串口数据并用摄像头拍摄照片
 void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 	
+	//VideoCapture cap;
+	//ini_cap(cap);
+	map<string, string> last_rfid;//存储最新的rfid和时间
+	map<string, string> dic_rfid_carNum;//车号配置表
+	map<string, int> dic_carNum_times;//车号趟数对应记录
+
+	//判断是否需要更新配置数据
+	if (_access("updated", 00) != -1)  //00——只检查文件是否存在，如果文件存在，返回0，否则返回-1
+	{
+		dic_rfid_carNum = read_rfid_carNum_file();//初始化，读取本地配置表
+		
+		for (map<string, string>::iterator iter1 = dic_rfid_carNum.begin(); iter1 != dic_rfid_carNum.end(); iter1++)
+		{
+			bool flag = false; //用来记录车号趟数键值对中是否已有车号
+			//双层循环初始化车号趟数键值对
+			for (map<string, int>::iterator iter2 = dic_carNum_times.begin(); iter2 != dic_carNum_times.end(); iter2++)
+			{
+				
+				//如果已有车号趟数记录，则结束内循环；
+				if (iter1->second == iter2->first)
+				{
+					flag = true;
+					break;
+				}
+			}
+			//有新的车号，则进行初始化
+			//直接用数组方式赋值map会根据键的值自动排序
+			if (flag == false) dic_carNum_times[iter1->second] = 0; 
+		}
+		remove("updated");
+		cout << "更新完成" << endl;
+	}
+
+	//判断是否需要清空趟数
+	if (_access("clear", 00) != -1) //若存在clear文件
+	{
+		for (map<string, int>::iterator iter1 = dic_carNum_times.begin(); iter1 != dic_carNum_times.end(); iter1++)
+		{
+			dic_carNum_times[iter1->first] = 0;
+		}
+		cout << "运输趟数重置" << endl;
+		remove("clear");
+	}
+
+	/*
+	for (map<string, string>::iterator iter1 = dic_rfid_carNum.begin(); iter1 != dic_rfid_carNum.end(); iter1++)
+	{
+		cout << iter1->first << " " << iter1->second << endl;
+	}
+
+	for (map<string, int>::iterator iter2 = dic_carNum_times.begin(); iter2 != dic_carNum_times.end(); iter2++)
+	{
+		cout<< iter2->first << " " << iter2->second << endl;
+	}
+	*/
 	
-	VideoCapture cap;
-	ini_cap(cap);
-	
+	/*
 	double width = cap.get(CV_CAP_PROP_FRAME_WIDTH);
 	double height = cap.get(CV_CAP_PROP_FRAME_HEIGHT);
 	cout << "宽" << width << " 高" << height << endl;
@@ -330,6 +433,8 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 	
 
 	pic.push(frame);
+	*/
+	
 	/*
 	while(!picinfo.empty())
 	{
@@ -578,47 +683,31 @@ void test_json()
 
 int main() {
 
-	//string s ="b'\x11\x00\xee\x00\xe0 \x820b6\xaa \x04\x13\x13\xfa\xc4\\'";
-	//string s = "c45c1100e";
-	//cout << "字符串长度为： " << s.length() << endl;
-	//s.erase(s.length() - 1, 1);
-	//s.erase(0, 2);
-	
-	//cout << s << endl;
-
-
 	//get_rfid_confg_from_request();
-	
+
+
 	/*
+		
 	queue<vector<string>> picinfo;
 	queue<Mat> pic;
 	//传引用，需要用ref()进行包装
-	thread th1 = thread(rev_serial,std::ref(picinfo),ref(pic));
+	thread th1 = thread(rev_serial, std::ref(picinfo), ref(pic));
 	thread th2 = thread(sav_data, std::ref(picinfo), ref(pic));
-	
+
 	th1.join();
 	th2.join();
 
-
-	string hex_data = "1100ee00e02082306236aa20041313fcf239";
-	string head_rfid = hex_data.substr(0, 6);
-	if (head_rfid == "1100ee")
-	{
-		//将16进制数据转为10进制rfid卡号
-		int rfidNum = stoi(hex_data.substr(24, 8),nullptr,16);
-		cout << rfidNum << endl;
-	}
-
 	*/
-	
-	//uplode_data();
 	//rec_serialdata();
 
-	
+	//uplode_data();
 
-	read_rfid_carNum_file();
+	//read_rfid_carNum_file();
 
+	//update_rfid_confg();
+	queue<vector<string>> picinfo;
+	queue<Mat> pic;
+	rev_serial(picinfo, pic);
 
-	
 	return 0;
 }
