@@ -32,12 +32,13 @@
 using namespace cv;
 using namespace std;
 using json = nlohmann::json;
+using namespace std::chrono;
 
 //根据获取的rfid车号配置数据，更新本地rfid_carNum配置文件
 void create_rfid_carNum_file(map<string,string> dic_rfid_carNum) {
 	string filename = "rfid_carNum.xlsx";
 	//查看文件是否存在
-	if (_access(filename.c_str(),00)!=-1)
+	if (_access(filename.c_str(),00)!=-1)//00只检查文件是否存在
 	{
 		//存在则删除
 		remove(filename.c_str());
@@ -132,11 +133,13 @@ void get_rfid_confg_from_request() {
 	map<string, string> dic_rfid_carNum;
 	while (request_times < 5)
 	{
-		//测试http访问是否有效用的网站https://www.httpbin.org/get
-		cpr::Response r = cpr::Get(cpr::Url{ "http://110.17.165.146:7080/GuangNaReceived/counter/initConfig?address=GNXM" });
+		//本地服务器端http://localhost:8083/Server/counter/initConfig?address=GNXM
+		//远程服务器端http://222.74.94.190:8093/Server/counter/initConfig?address=GNXM
+		cpr::Response r = cpr::Get(cpr::Url{ "http://localhost:8083/Server/counter/initConfig?address=PANH" });
 		//提取data数据中的字符串，转换为json格式
 		string s = r.text;
-		cout << "接收到的json数据为：" << s << endl;
+		if (s.length() == 0) return;
+		cout << "接收到的RFID配置数据为：" << s << endl;
 		auto config_json = json::parse(s);
 		if (config_json["result"]["success"] == true)
 		{
@@ -188,9 +191,13 @@ void clear_times() {
 
 //每天自动更新车辆信息、清空运输数据
 void update_rfid_confg() {
+	bool getconfig = false;
+	bool dayclear = false;
+	bool nightclear = false;
 	while (true)
 	{
-		Sleep(3 * 1000);
+		this_thread::sleep_for(seconds(3));
+		//Sleep(3 * 1000);
 		time_t now = time(0);
 		//cout << "1970 到目前经过秒数:" << now << endl;
 		//转为tm结构体
@@ -198,9 +205,34 @@ void update_rfid_confg() {
 		//nowtime为当前小时分钟
 		string nowtime = to_string(ltm->tm_hour) + ":" + to_string(ltm->tm_min);
 		cout << nowtime << endl;
-		if (nowtime == "05:50") get_rfid_confg_from_request();
-		else if (nowtime == "06:00") clear_times();//白班运输次数清零
-		else if (nowtime == "21:31") clear_times();//夜班运输次数清零
+		if (nowtime == "05:45") {
+			getconfig = false;
+			dayclear = false;
+			nightclear = false;
+		}
+		//时间为五点五十，且尚未获取配置信息
+		if (nowtime == "05:55" && !getconfig) 
+		{ 
+			get_rfid_confg_from_request();
+			cout << "更新RFID配置信息完成" << endl;
+			getconfig = true;
+		}
+		//白班运输次数清零
+		else if (nowtime == "05:59" && !dayclear) 
+		{
+			cout << "白班开始，运输次数需清零" << endl;
+			clear_times();
+			dayclear = true;
+		}
+			
+
+		//夜班运输次数清零
+		else if (nowtime == "17:59" && !nightclear) 
+		{
+			cout << "夜班开始，运输次数需清零" << endl;
+			clear_times();
+			nightclear = true;
+		}
 	}
 
 	/*
@@ -283,7 +315,6 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 				//双层循环初始化车号趟数键值对
 				for (map<string, int>::iterator iter2 = dic_carNum_times.begin(); iter2 != dic_carNum_times.end(); iter2++)
 				{
-
 					//如果已有车号趟数记录，则结束内循环；
 					if (iter1->second == iter2->first)
 					{
@@ -316,7 +347,6 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 		stringstream ss;
 		time_t now = time(0);//取得从1970年1月1日至今的秒数。
 		unsigned int now_time = unsigned int(now);
-		cout << now_time << endl;
 		try
 		{
 			memset(buf, 0, 1024);
@@ -328,7 +358,7 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 			//serialport.receive(buf, 1024);
 			//cout << "test" << endl;
 			int len = serialport.receive(buf, 1024);
-			cout << "WZSerialPort接收到的数据长度为: " << len << endl;
+			cout << "接收到的串口数据为数据长度为: " << len << endl;
 			//逐个字符转16进制写入字符串hex_data中
 			for (int i = 0; i < len; i++)
 			{
@@ -341,9 +371,10 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 
 
 			cout << "解析后的16进制字符串长度为：" << hex_data.length() << endl;
-			cout << "解析后的16进制数据为：" << hex_data << endl;
+			cout << "解析后的16进制字符串为：" << hex_data << endl;
 
 			string head_rfid = hex_data.substr(0, 6);
+			
 			if (head_rfid == "1100ee" && hex_data.length() >= 36)//1100ee说明得到的数据为完整数据的整数倍，有可能一条里面有多个rfid数据,并且为正确的开始帧
 			{
 				bool is_Newdata = false;
@@ -351,17 +382,23 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 				//将16进制数据转为10进制rfid卡号
 				int rfidNum = stoi(hex_data.substr(24, 8), nullptr, 16);
 				cout << "解析出的rfid卡号为：" << rfidNum << endl;
+
+
+				//遍历rfid/时间 数据字典，判断是否为有效运输
 				for (map<string, unsigned int>::iterator iter = last_rfid.begin(); iter != last_rfid.end(); iter++)
 				{
-					//cout << "1111" << endl;
 					//若最近存在运输记录运输,且时间间隔大于300秒，则为新来的记录。
+					cout << "last_rfid字典中  rfid=" << iter->first << " 解析出的rfid=" << to_string(rfidNum) << endl;
+					cout << "rfid是否存在：" << (to_string(rfidNum) == (iter->first)) << endl;
 					if (to_string(rfidNum) == iter->first)
 					{
 						is_Exist_rfid = true;
 						if ((now_time - iter->second) > 30) {
+							cout << "与上次运输间隔秒数：" << (now_time - iter->second) << endl;
 							is_Newdata = true;
 							break;
 						}
+						else break;
 					}
 					else is_Exist_rfid = false;
 				}
@@ -382,13 +419,13 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 					if (is_Exist_car)
 					{
 						string current_car_num = dic_rfid_carNum[to_string(rfidNum)];
-						cout << current_car_num << endl;
+						cout << "车号为："<<current_car_num << endl;
 						//对应车辆运输趟数+1
 						dic_carNum_times[current_car_num] = dic_carNum_times[current_car_num] + 1;
-						cout << dic_carNum_times[current_car_num] << endl;
+						cout << "运输次数为："<<dic_carNum_times[current_car_num] << endl;
 					}
 					else
-						cout << "car missing" << endl;
+						cout << "没有该车的配置信息" << endl;
 
 					//抓图,初始化
 					ini_cap(cap);
@@ -443,6 +480,11 @@ void rev_serial(queue<vector<string>> &picinfo,queue<Mat> &pic) {
 
 					pic.push(frame);
 					last_rfid[to_string(rfidNum)] = now_time;
+
+					for (map<string, unsigned int>::iterator iter = last_rfid.begin(); iter != last_rfid.end(); iter++)
+					{
+						cout << "rfid号=" << iter->first << " 运输时间=" << iter->second << endl;
+					}
 				}
 			}
 		}
@@ -483,9 +525,9 @@ void sav_data(queue<vector<string>>& picinfo, queue<Mat>& pic) {
 	vector<string> record;
     while (true)
 	{
-		string pic_name = "GNXM@001#";
 		record.clear();
-		Sleep(2 * 1000);
+		this_thread::sleep_for(seconds(2));
+		//Sleep(2 * 1000);
 		if (picinfo.empty())
 		{
 			cout << "队列已空" << endl;
@@ -495,9 +537,8 @@ void sav_data(queue<vector<string>>& picinfo, queue<Mat>& pic) {
 		record = picinfo.front();
 		picinfo.pop();
 		//照片名称，不可用冒号
-		pic_name = pic_name + record[0] + "#" + record[2] + "#" + record[3];
+		string pic_name = "PANH@001#" + record[0] + "#" + record[2] + "#" + record[3];
 		cout << pic_name << endl;
-		
 		Mat frame = pic.front();
 		pic.pop();
 		//保存图片到本地,设置图片压缩参数
@@ -584,17 +625,21 @@ void uplode_data() {
 	string search_path = "savePic/*.jpg";
 	string path = "savePic/";
 	const char delim[2] = "#";
-	handle = _findfirst64(search_path.c_str(), &fileInfo);
-	if (handle==-1)
-	{
-		cout << "文件夹中没有读取到文件" << endl;
-	}
+	
 	//遍历指定路径下文件夹中文件名称、大小、创建时间等
 	try
 	{
 		do
 		{
-			cout << "文件大小为 " << fileInfo.size << "文件名为 " << fileInfo.name << endl;
+			this_thread::sleep_for(seconds(3));
+			//Sleep(1000 * 3);
+			handle = _findfirst64(search_path.c_str(), &fileInfo);
+			if (handle == -1)
+			{
+				cout << "文件夹中没有读取到文件" << endl;
+				continue;
+			}
+			cout << "文件大小为 " << fileInfo.size << " 文件名为 " << fileInfo.name << endl;
 			string picname = fileInfo.name;
 			files.push_back(picname);
 			//将图片名称以"#"分割。并存入容器中
@@ -605,7 +650,7 @@ void uplode_data() {
 			rfid_record[3] = rfid_record[3].replace(rfid_record[3].find("."), 4, "");//去掉.jpg，只保留照片类型（cap/blank）
 			//cout << rfid_record[2] << endl;
 			//cout << rfid_record[3] << rfid_record[3].size()<< endl;
-			if (fileInfo.size < 35000 && rfid_record[3] == "cap")//是抓图且文件小于一定大小，说明不完整,另一个线程正在保存文件
+			if (fileInfo.size < 30000 && rfid_record[3] == "cap")//是抓图且文件小于一定大小，说明不完整,另一个线程正在保存文件
 			{
 				Sleep(3 * 1000);
 			}
@@ -614,23 +659,24 @@ void uplode_data() {
 				
 				//图片转base64编码
 				string base64_data = pic_convertto_bin((path + fileInfo.name).c_str());
-				cout << 111 << endl;
 				//cout << base64_data << endl;
 
 
 				json upload_data;
 				upload_data["address"] = rfid_record[0];
-				upload_data["cardNo"] = rfid_record[1];
+				upload_data["rfid"] = rfid_record[1];
 				upload_data["picture"] = base64_data;
 				upload_data["time"] = rfid_record[2];
 				//cout << upload_data << endl;
 				
 				//将json转为字符串
 				string s = upload_data.dump();
-				cout << s << endl;
+				//cout << s << endl;
 				
-				string url_upload = "http://110.17.165.146:7080/GuangNaReceived/counter/add";
-				cpr::Payload payload = cpr::Payload{ {"address",rfid_record[0]},{"cardNo",rfid_record[1]},
+				//本地服务器端http://localhost:8083/Server/counter/add
+				//远程服务器http://110.17.165.146:7080/GuangNaReceived/counter/add
+				string url_upload = "http://localhost:8083/Server/counter/add";
+				cpr::Payload payload = cpr::Payload{ {"address",rfid_record[0]},{"rfid",rfid_record[1]},
 					{"picture",base64_data},{"time",rfid_record[2]} };
 				cpr::Body body = cpr::Body( s );
 				cpr::Response r = cpr::Post(cpr::Url(url_upload),
@@ -644,7 +690,6 @@ void uplode_data() {
 					{"picture",base64_data},
 					{"time",rfid_record[2]}});
 					*/
-					
 
 				cout << r.status_code << endl;
 				cout << r.header["content-type"] << endl;
@@ -654,15 +699,16 @@ void uplode_data() {
 				//上传成功，将图片转移到rfid_pic_finish文件夹
 				if (post_response["result"]["success"] = true)
 				{
+					cout << "图片上传成功" << endl;
 					string prefile = "savePic/" + string(fileInfo.name);
 					string nextfile = "rfid_pic_finish/"+string(fileInfo.name);
 					MoveFileA(prefile.c_str(), nextfile.c_str());
+					cout << "图片备份成功" << endl;
 				}
-				break;
+				//break;
 			}
-
-		} while (_findnext64(handle, &fileInfo) != -1);
-		cout << "查找到" << files.size() << "个文件" << endl;
+		} while (true);
+		
 	}
 
 
@@ -674,34 +720,31 @@ void uplode_data() {
 	
 }
 
-void test_json()
-{
-	json upload_data;
-	upload_data["address"] = "GNXM@001";
-	upload_data["cardNo"] = "68359998";
-	upload_data["picture"] = "data:image/jpg;base64,";
-	upload_data["time"] = "2020-07-14 16:45:54";
-	cout << upload_data << endl;
-}
-
-
 int main() {
 
-	//get_rfid_confg_from_request();
+	get_rfid_confg_from_request();
 
 
+	
 	/*
-		
 	queue<vector<string>> picinfo;
 	queue<Mat> pic;
 	//传引用，需要用ref()进行包装
 	thread th1 = thread(rev_serial, std::ref(picinfo), ref(pic));
 	thread th2 = thread(sav_data, std::ref(picinfo), ref(pic));
-
+	thread th3 = thread(uplode_data);
+	thread th4 = thread(update_rfid_confg);
 	th1.join();
 	th2.join();
-
+	th3.join();
+	th4.join();
 	*/
+	
+	
+	
+	
+	
+	
 
 
 	//uplode_data();
